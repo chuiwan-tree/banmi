@@ -96,8 +96,16 @@ class World {
     const g = this.grid();
     const fcache = {};
     const F = (x, y) => fcache[x + ',' + y] || (fcache[x + ',' + y] = this.field(g, x, y));
+    // 挨着的桌子拼成一张大桌：坐一张大桌上的人都算同桌
+    const grp = this.tables.map((_, i) => i);
+    const root = i => grp[i] == i ? i : (grp[i] = root(grp[i]));
+    this.tables.forEach((a, i) => this.tables.forEach((b, j) => {
+      if (j <= i) return;
+      if ((a.y == b.y && Math.abs(a.x - b.x) == 2) || (Math.abs(a.y - b.y) == 1 && Math.abs(a.x - b.x) <= 1)) grp[root(i)] = root(j); }));
+    this.tables.forEach((_, i) => root(i));
+    this.groups = grp.slice();
     const seats = []; this.tables.forEach((tb, ti) => seatsOf(tb).forEach(([x, y], si) => {
-      if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && !g[y][x] && !seats.some(o => o.x == x && o.y == y)) seats.push({ ti, si, x, y, who: -1 }); }));
+      if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && !g[y][x] && !seats.some(o => o.x == x && o.y == y)) seats.push({ ti, si, g: grp[ti], x, y, who: -1 }); }));
     const events = [];
     const say = (t, s) => events.push({ t, s });
 
@@ -145,7 +153,7 @@ class World {
         if (s.who >= 0) continue;
         const d = F(s.x, s.y)[st.y][st.x]; if (d >= 1e9) continue;
         let sc = -d * 0.5;
-        const mates = seats.filter(o => o.ti == s.ti && o.who >= 0).map(o => o.who);
+        const mates = seats.filter(o => o.g == s.g && o.who >= 0).map(o => o.who);
         for (const m of mates) sc += this.isFriend(p.id, m) ? 30 : (p.shy ? -6 : 1);
         if (p.habit && p.habit[0] == s.ti && p.habit[1] == s.si) sc += 12;
         else if (p.habit && p.habit[0] == s.ti) sc += 5;
@@ -218,7 +226,7 @@ class World {
 
     // 吃饭时同桌的人熟一点
     const byTable = {};
-    for (const s of seats) if (s.who >= 0) (byTable[s.ti] = byTable[s.ti] || []).push(s.who);
+    for (const s of seats) if (s.who >= 0) (byTable[s.g] = byTable[s.g] || []).push(s.who);
     const today = {};
     for (const s of seats) if (s.who >= 0) today[s.who] = [s.ti, s.si];
     for (const ti in byTable) { const m = byTable[ti];
@@ -243,7 +251,7 @@ class World {
     for (const p of this.people) if (today[p.id]) p.habit = today[p.id];
     for (const p of this.people) if (p.isNew && !p.left && day - p.isNew < 7) {
       const fr = this.people.filter(o => o.id != p.id && this.isFriend(o.id, p.id)).length;
-      const t = today[p.id]; const mates = t ? byTable[t[0]].length - 1 : -1;
+      const t = today[p.id]; const mates = t ? byTable[grp[t[0]]].length - 1 : -1;
       if (mates == 0) say(999, `${p.name}来的第 ${day - p.isNew + 1} 天，还是一个人坐一张桌子`); }
     const alone = Object.values(byTable).filter(m => m.length == 1).map(m => this.people[m[0]].name);
     if (alone.length) say(999, `一个人吃饭的：${alone.join('、')}`);
