@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>半米</title>
+<style>
+body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f4efe6;color:#333;margin:0;padding:16px;display:flex;gap:18px;flex-wrap:wrap}
+#left{display:flex;flex-direction:column;gap:8px}
+canvas{background:#e9e2d4;border-radius:6px;cursor:default}
+button{font-size:14px;padding:5px 12px;margin-right:6px;border:1px solid #a89b84;background:#fffaf0;border-radius:4px;cursor:pointer}
+button:disabled{opacity:.4}
+#right{width:400px;font-size:14px;line-height:1.6}
+#log div{margin:2px 0}
+.small{color:#888;font-size:12px}
+h3{margin:12px 0 4px;font-size:15px}
+#diff{background:#fffaf0;border:1px solid #d8ccb4;border-radius:6px;padding:8px;display:none}
+.a{color:#a0522d}.b{color:#2f6f8f}
+#tip{position:fixed;pointer-events:none;background:#333;color:#fff;font-size:12px;padding:2px 6px;border-radius:3px;display:none}
+</style></head><body>
+<div id="left">
+  <div><b>半米</b>　<span id="day"></span>　<span id="clock" class="small"></span></div>
+  <canvas id="cv"></canvas>
+  <div>
+    <button id="go">过一天</button><button id="go5">连过五天</button><button id="back">桌子全推回原处</button><button id="fast">快一点</button>
+  </div>
+  <div class="small">桌子随时可以拖（这一天的饭吃完才拖得动）。点一个人，看他跟谁熟。<br>
+  你第一次推桌子的时候，旁边会留一个没被推过的食堂，跟着一起过日子，右边写着两边哪里不一样。</div>
+</div>
+<div id="right">
+  <div id="diff"></div>
+  <h3>今天</h3><div id="log"></div>
+  <h3 id="whoh" style="display:none"></h3><div id="who"></div>
+</div>
+<div id="tip"></div>
+<script src="sim.js"></script>
+<script>
+const {World, diff, W, H, DOOR, RICE, SOUP, WATER, SUN, seatsOf} = BanMi;
+const C = 36;
+const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+cv.width = W * C; cv.height = H * C;
+let world = new World(11), shadow = null, frames = null, fi = 0, playing = false, speed = 1;
+let drag = null, picked = null, mouse = null;
+const color = i => `hsl(${(i * 137) % 360},55%,${45 + (i % 3) * 8}%)`;
+
+function seatedNow(w) { // 最近一天谁坐在哪
+  const h = w.history[w.history.length - 1] || {}; const out = {};
+  for (const id in h) { const [ti, si] = h[id]; const tb = w.tables[ti]; if (!tb) continue; out[id] = seatsOf(tb)[si]; }
+  return out;
+}
+
+function draw() {
+  cx.clearRect(0, 0, cv.width, cv.height);
+  // 太阳
+  for (const [x, y] of SUN) { cx.fillStyle = 'rgba(255,205,90,.45)'; cx.fillRect(x * C, y * C, C, C); }
+  // 墙
+  cx.fillStyle = '#8a7b66';
+  for (let x = 0; x < W; x++) { cx.fillRect(x * C, 0, C, C); cx.fillRect(x * C, (H - 1) * C, C, C); }
+  for (let y = 0; y < H; y++) { cx.fillRect(0, y * C, C, C); cx.fillRect((W - 1) * C, y * C, C, C); }
+  cx.fillStyle = '#f7d77a'; for (let y = 10; y <= 12; y++) cx.fillRect((W - 1) * C + 8, y * C + 2, C - 16, C - 4); // 窗
+  cx.fillStyle = '#e9e2d4'; cx.fillRect(0, DOOR[1] * C, C, C); // 门
+  cx.fillStyle = '#555'; cx.font = '12px sans-serif'; cx.fillText('门', 10, DOOR[1] * C + 22);
+  // 窗口
+  const lab = (pts, t, c) => { for (const [x, y] of pts) { cx.fillStyle = c; cx.fillRect(x * C + 2, (y - 1) * C + 4, C - 4, C - 8); cx.fillStyle = '#fff'; cx.fillText(t, x * C + 6, (y - 1) * C + 23); } };
+  lab(RICE.slice(0, 1), '饭', '#b5651d'); lab(RICE.slice(1), '老李', '#b5651d'); lab(SOUP, '汤', '#7a5230');
+  for (const [x, y] of WATER) { cx.fillStyle = '#4a90b8'; cx.fillRect((x + 1) * C + 4, y * C + 2, C - 8, C - 4); cx.fillStyle = '#fff'; cx.fillText('水', (x + 1) * C + 10, y * C + 23); }
+  // 麻雀
+  const last = world.log[world.log.length - 1];
+  const sunny = !world.tables.some(t => SUN.some(([x, y]) => t.y == y && (t.x == x || t.x + 1 == x)));
+  cx.font = '16px sans-serif';
+  if (sunny) cx.fillText('🐦', 19 * C + 8, 12 * C + 24); else cx.fillText('🐦', 10 * C + 8, 1 * C + 22);
+  cx.font = '12px sans-serif';
+  // 桌子
+  world.tables.forEach((t, i) => {
+    let x = t.x, y = t.y;
+    if (drag && drag.i == i) { x = drag.x; y = drag.y; }
+    cx.fillStyle = drag && drag.i == i ? (world.canPlace(i, x, y) ? '#c49a6c' : '#d77') : '#a67c52';
+    cx.fillRect(x * C + 3, y * C + 6, 2 * C - 6, C - 12);
+    if (shadow) { const s = shadow.tables[i]; if (s.x != t.x || s.y != t.y) { cx.strokeStyle = 'rgba(80,80,80,.5)'; cx.setLineDash([4, 4]); cx.strokeRect(s.x * C + 3, s.y * C + 6, 2 * C - 6, C - 12); cx.setLineDash([]); } }
+  });
+  // 人
+  if (frames && playing) {
+    const f = frames[Math.min(fi, frames.length - 1)];
+    f.forEach((p, i) => { if (!p) return; dot(p[0], p[1], i, p[2]); });
+  } else {
+    const s = seatedNow(world);
+    if (picked != null) { // 熟人的线
+      cx.strokeStyle = 'rgba(200,60,60,.7)'; cx.lineWidth = 2;
+      for (const id in s) if (id != picked && world.isFriend(+id, picked) && s[picked]) {
+        cx.beginPath(); cx.moveTo(s[picked][0] * C + C / 2, s[picked][1] * C + C / 2); cx.lineTo(s[id][0] * C + C / 2, s[id][1] * C + C / 2); cx.stroke(); }
+      cx.lineWidth = 1;
+    }
+    for (const id in s) dot(s[id][0], s[id][1], +id, 0, picked != null && picked != +id && !world.isFriend(+id, picked));
+  }
+}
+function dot(x, y, i, carry, dim) {
+  cx.globalAlpha = dim ? .25 : 1;
+  cx.fillStyle = color(i); cx.beginPath(); cx.arc(x * C + C / 2, y * C + C / 2, C / 2 - 5, 0, 7); cx.fill();
+  if (carry) { cx.fillStyle = '#4a90b8'; cx.beginPath(); cx.arc(x * C + C - 8, y * C + 8, 5, 0, 7); cx.fill(); }
+  if (i == picked) { cx.strokeStyle = '#000'; cx.lineWidth = 2; cx.stroke(); cx.lineWidth = 1; }
+  cx.globalAlpha = 1;
+}
+
+function names(k, w) { return k.split(',').map(i => w.people[i].name).join('和'); }
+function showLog() {
+  document.getElementById('day').textContent = world.day ? `第 ${world.day} 天` : '还没开饭';
+  const L = world.log[world.log.length - 1];
+  document.getElementById('log').innerHTML = L ? L.events.map(e => `<div>${e.s}</div>`).join('') : '<div class="small">点"过一天"开饭。</div>';
+  const D = document.getElementById('diff');
+  if (shadow && shadow.day > 0) {
+    const d = diff(world, shadow);
+    D.style.display = 'block';
+    let h = `<b>跟没推过的那个食堂比</b>（从第 ${shadowFrom + 1} 天分开）<br>今天坐的位置不一样的：${d.moved} 个人<br>`;
+    h += `<span class="a">只在这边熟了的：</span>${d.onlyA.length ? d.onlyA.map(k => names(k, world)).join('，') : '没有'}<br>`;
+    h += `<span class="b">只在那边熟了的：</span>${d.onlyB.length ? d.onlyB.map(k => names(k, world)).join('，') : '没有'}<br>`;
+    const ls = shadow.log[shadow.log.length - 1];
+    h += `<details><summary class="small">那边今天</summary>${ls.events.map(e => `<div class="small">${e.s}</div>`).join('')}</details>`;
+    h += `<button id="rebase" style="margin-top:6px">从这儿重新比</button>`;
+    D.innerHTML = h;
+    document.getElementById('rebase').onclick = () => { shadow = null; showLog(); draw(); };
+  } else if (shadow) { D.style.display = 'block'; D.innerHTML = '<b>你推过桌子了。</b>过一天看看。'; }
+  else D.style.display = 'none';
+  showWho();
+}
+function showWho() {
+  const h = document.getElementById('whoh'), b = document.getElementById('who');
+  if (picked == null) { h.style.display = 'none'; b.innerHTML = ''; return; }
+  const p = world.people[picked];
+  h.style.display = 'block'; h.textContent = p.name + (p.shy ? '（怕生）' : '');
+  const fr = world.people.filter(o => o.id != picked && world.isFriend(o.id, picked)).map(o => `${o.name}（第 ${world.friends[world.key(o.id, picked)]} 天）`);
+  let s = `熟的人：${fr.length ? fr.join('、') : '还没有'}<br>`;
+  if (shadow && shadow.day > 0) {
+    const fs = shadow.people.filter(o => o.id != picked && shadow.isFriend(o.id, picked)).map(o => o.name);
+    s += `<span class="b">在没推过的那边：</span>${fs.length ? fs.join('、') : '还没有'}`;
+  }
+  b.innerHTML = s;
+}
+
+let shadowFrom = 0;
+function step(n, animate) {
+  if (playing) return;
+  for (let k = 0; k < n; k++) {
+    const last = k == n - 1 && animate;
+    const fr = world.runDay(last);
+    if (shadow) shadow.runDay(false);
+    if (last) { frames = fr; fi = 0; playing = true; }
+  }
+  if (!playing) { showLog(); draw(); }
+  else { document.getElementById('log').innerHTML = '<div class="small">开饭了……</div>'; document.getElementById('day').textContent = `第 ${world.day} 天`; }
+}
+function tick() {
+  if (playing) {
+    fi += speed;
+    const m = 20 + Math.floor(Math.min(fi, frames.length - 1) / 6);
+    document.getElementById('clock').textContent = `12:${String(m).padStart(2, '0')}`;
+    if (fi >= frames.length) { playing = false; frames = null; document.getElementById('clock').textContent = ''; showLog(); }
+    draw();
+  }
+  requestAnimationFrame(tick);
+}
+function moved() { if (!shadow) { shadow = world.clone(); shadowFrom = world.day; } }
+
+document.getElementById('go').onclick = () => step(1, true);
+document.getElementById('go5').onclick = () => step(5, false);
+document.getElementById('fast').onclick = e => { speed = speed == 1 ? 4 : 1; e.target.textContent = speed == 1 ? '快一点' : '慢一点'; };
+document.getElementById('back').onclick = () => {
+  if (playing) return;
+  const def = new World(world.seed).tables;
+  if (def.every((t, i) => t.x == world.tables[i].x && t.y == world.tables[i].y)) return;
+  moved(); world.tables = def; draw();
+};
+const cell = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / C), Math.floor((e.clientY - r.top) / C)]; };
+cv.onmousedown = e => {
+  if (playing) return;
+  const [x, y] = cell(e);
+  const i = world.tables.findIndex(t => t.y == y && (t.x == x || t.x + 1 == x));
+  if (i >= 0) { drag = { i, x: world.tables[i].x, y: world.tables[i].y, ox: x - world.tables[i].x }; return; }
+  const s = seatedNow(world); const id = Object.keys(s).find(k => s[k][0] == x && s[k][1] == y);
+  picked = id != null ? +id : null; showWho(); draw();
+};
+cv.onmousemove = e => {
+  const [x, y] = cell(e);
+  if (drag) { drag.x = x - drag.ox; drag.y = y; draw(); }
+  const tip = document.getElementById('tip');
+  let name = null;
+  if (!playing) { const s = seatedNow(world); const id = Object.keys(s).find(k => s[k][0] == x && s[k][1] == y); if (id != null) name = world.people[id].name; }
+  else if (frames) { const f = frames[Math.min(fi, frames.length - 1)]; const i = f.findIndex(p => p && p[0] == x && p[1] == y); if (i >= 0) name = world.people[i].name; }
+  if (name) { tip.style.display = 'block'; tip.style.left = e.clientX + 12 + 'px'; tip.style.top = e.clientY + 8 + 'px'; tip.textContent = name; } else tip.style.display = 'none';
+};
+window.onmouseup = () => {
+  if (!drag) return;
+  const t = world.tables[drag.i];
+  if ((drag.x != t.x || drag.y != t.y) && world.canPlace(drag.i, drag.x, drag.y)) { moved(); world.tables[drag.i] = { x: drag.x, y: drag.y }; }
+  drag = null; draw();
+};
+if (location.hash == '#t') { step(5, false); moved(); world.tables[12] = { x: 18, y: 10 }; step(10, false); picked = 0; showLog(); draw(); }
+showLog(); draw(); tick();
+</script></body></html>
