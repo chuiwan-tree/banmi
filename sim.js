@@ -55,7 +55,7 @@ class World {
     const w = new World(this.seed, 1);
     w.day = this.day; w.tables = this.tables.map(t => ({ ...t }));
     w.people = this.people.map(p => ({ ...p, habit: p.habit && p.habit.slice() }));
-    w.fam = { ...this.fam }; w.friends = { ...this.friends };
+    w.fam = { ...this.fam }; w.friends = { ...this.friends }; w.owner = { ...(this.owner || {}) };
     w.log = this.log.slice(); w.history = this.history.slice(); w.liHappy = this.liHappy;
     return w;
   }
@@ -248,6 +248,14 @@ class World {
       } else if (!together[k]) this.fam[k] *= 0.85;
     }
     // 习惯：今天坐哪，明天还想坐哪
+    // 谁坐了转走的人原来的位子
+    this.owner = this.owner || {};
+    for (const p of this.people) { const t = today[p.id]; if (!t) continue;
+      const k = t[0] + ',' + t[1], o = this.owner[k];
+      if (o != null && o != p.id && this.people[o].left && !this.people[o].seatTaken) {
+        this.people[o].seatTaken = true;
+        say(999, `${p.name}坐的是${this.people[o].name}原来的位子`); }
+      if (p.habit && p.habit[0] == t[0] && p.habit[1] == t[1]) this.owner[k] = p.id; }
     for (const p of this.people) if (today[p.id]) p.habit = today[p.id];
     for (const p of this.people) if (p.isNew && !p.left && day - p.isNew < 7) {
       const fr = this.people.filter(o => o.id != p.id && this.isFriend(o.id, p.id)).length;
