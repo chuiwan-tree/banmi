@@ -24,6 +24,7 @@ h3{margin:12px 0 4px;font-size:15px}
   你第一次推桌子的时候，旁边会留一个没被推过的食堂，跟着一起过日子，右边写着两边哪里不一样。</div>
 </div>
 <div id="right">
+  <div id="other" style="display:none"><div class="small">没推过的那个食堂，同一天（点了谁，两边都亮他）</div><canvas id="cv2"></canvas></div>
   <div id="diff"></div>
   <h3>今天</h3><div id="log"></div>
   <h3 id="whoh" style="display:none"></h3><div id="who"></div>
@@ -35,6 +36,8 @@ const {World, diff, W, H, DOOR, RICE, SOUP, WATER, SUN, seatsOf} = BanMi;
 const C = 36;
 const cv = document.getElementById('cv'), cx = cv.getContext('2d');
 cv.width = W * C; cv.height = H * C;
+const C2 = 16, cv2 = document.getElementById('cv2'), cx2 = cv2.getContext('2d');
+cv2.width = W * C2; cv2.height = H * C2;
 let world = new World(11), shadow = null, frames = null, fi = 0, playing = false, speed = 1;
 let drag = null, picked = null, mouse = null;
 const color = i => `hsl(${(i * 137) % 360},55%,${45 + (i % 3) * 8}%)`;
@@ -45,8 +48,8 @@ function seatedNow(w) { // 最近一天谁坐在哪
   return out;
 }
 
-function draw() {
-  cx.clearRect(0, 0, cv.width, cv.height);
+function drawRoom(cx, w, C, main) {
+  cx.clearRect(0, 0, W * C, H * C);
   // 太阳
   for (const [x, y] of SUN) { cx.fillStyle = 'rgba(255,205,90,.45)'; cx.fillRect(x * C, y * C, C, C); }
   // 墙
@@ -55,41 +58,40 @@ function draw() {
   for (let y = 0; y < H; y++) { cx.fillRect(0, y * C, C, C); cx.fillRect((W - 1) * C, y * C, C, C); }
   cx.fillStyle = '#f7d77a'; for (let y = 10; y <= 12; y++) cx.fillRect((W - 1) * C + 8, y * C + 2, C - 16, C - 4); // 窗
   cx.fillStyle = '#e9e2d4'; cx.fillRect(0, DOOR[1] * C, C, C); // 门
-  cx.fillStyle = '#555'; cx.font = '12px sans-serif'; cx.fillText('门', 10, DOOR[1] * C + 22);
+  cx.fillStyle = '#555'; cx.font = Math.round(C / 3) + 'px sans-serif'; if (main) cx.fillText('门', 10, DOOR[1] * C + 22);
   // 窗口
-  const lab = (pts, t, c) => { for (const [x, y] of pts) { cx.fillStyle = c; cx.fillRect(x * C + 2, (y - 1) * C + 4, C - 4, C - 8); cx.fillStyle = '#fff'; cx.fillText(t, x * C + 6, (y - 1) * C + 23); } };
+  const lab = (pts, t, c) => { for (const [x, y] of pts) { cx.fillStyle = c; cx.fillRect(x * C + 2, (y - 1) * C + 4, C - 4, C - 8); if (main) { cx.fillStyle = '#fff'; cx.fillText(t, x * C + 6, (y - 1) * C + 23); } } };
   lab(RICE.slice(0, 1), '饭', '#b5651d'); lab(RICE.slice(1), '老李', '#b5651d'); lab(SOUP, '汤', '#7a5230');
-  for (const [x, y] of WATER) { cx.fillStyle = '#4a90b8'; cx.fillRect((x + 1) * C + 4, y * C + 2, C - 8, C - 4); cx.fillStyle = '#fff'; cx.fillText('水', (x + 1) * C + 10, y * C + 23); }
+  for (const [x, y] of WATER) { cx.fillStyle = '#4a90b8'; cx.fillRect((x + 1) * C + 4, y * C + 2, C - 8, C - 4); if (main) { cx.fillStyle = '#fff'; cx.fillText('水', (x + 1) * C + 10, y * C + 23); } }
   // 麻雀
-  const last = world.log[world.log.length - 1];
-  const sunny = !world.tables.some(t => SUN.some(([x, y]) => t.y == y && (t.x == x || t.x + 1 == x)));
-  cx.font = '16px sans-serif';
-  if (sunny) cx.fillText('🐦', 19 * C + 8, 12 * C + 24); else cx.fillText('🐦', 10 * C + 8, 1 * C + 22);
-  cx.font = '12px sans-serif';
+    const sunny = !w.tables.some(t => SUN.some(([x, y]) => t.y == y && (t.x == x || t.x + 1 == x)));
+  cx.font = Math.round(C / 2.2) + 'px sans-serif';
+  if (sunny) cx.fillText('🐦', 19 * C + C * .2, 12 * C + C * .7); else cx.fillText('🐦', 10 * C + C * .2, 1 * C + C * .6);
+  cx.font = Math.round(C / 3) + 'px sans-serif';
   // 桌子
-  world.tables.forEach((t, i) => {
+  w.tables.forEach((t, i) => {
     let x = t.x, y = t.y;
-    if (drag && drag.i == i) { x = drag.x; y = drag.y; }
-    cx.fillStyle = drag && drag.i == i ? (world.canPlace(i, x, y) ? '#c49a6c' : '#d77') : '#a67c52';
+    if (main && drag && drag.i == i) { x = drag.x; y = drag.y; }
+    cx.fillStyle = main && drag && drag.i == i ? (w.canPlace(i, x, y) ? '#c49a6c' : '#d77') : '#a67c52';
     cx.fillRect(x * C + 3, y * C + 6, 2 * C - 6, C - 12);
-    if (shadow) { const s = shadow.tables[i]; if (s.x != t.x || s.y != t.y) { cx.strokeStyle = 'rgba(80,80,80,.5)'; cx.setLineDash([4, 4]); cx.strokeRect(s.x * C + 3, s.y * C + 6, 2 * C - 6, C - 12); cx.setLineDash([]); } }
+    if (main && shadow) { const s = shadow.tables[i]; if (s.x != t.x || s.y != t.y) { cx.strokeStyle = 'rgba(80,80,80,.5)'; cx.setLineDash([4, 4]); cx.strokeRect(s.x * C + 3, s.y * C + 6, 2 * C - 6, C - 12); cx.setLineDash([]); } }
   });
   // 人
-  if (frames && playing) {
+  if (main && frames && playing) {
     const f = frames[Math.min(fi, frames.length - 1)];
-    f.forEach((p, i) => { if (!p) return; dot(p[0], p[1], i, p[2]); });
+    f.forEach((p, i) => { if (!p) return; dot(cx, C, p[0], p[1], i, p[2]); });
   } else {
-    const s = seatedNow(world);
+    const s = seatedNow(w);
     if (picked != null) { // 熟人的线
       cx.strokeStyle = 'rgba(200,60,60,.7)'; cx.lineWidth = 2;
-      for (const id in s) if (id != picked && world.isFriend(+id, picked) && s[picked]) {
+      for (const id in s) if (id != picked && w.isFriend(+id, picked) && s[picked]) {
         cx.beginPath(); cx.moveTo(s[picked][0] * C + C / 2, s[picked][1] * C + C / 2); cx.lineTo(s[id][0] * C + C / 2, s[id][1] * C + C / 2); cx.stroke(); }
       cx.lineWidth = 1;
     }
-    for (const id in s) dot(s[id][0], s[id][1], +id, 0, picked != null && picked != +id && !world.isFriend(+id, picked));
+    for (const id in s) dot(cx, C, s[id][0], s[id][1], +id, 0, picked != null && picked != +id && !w.isFriend(+id, picked));
   }
 }
-function dot(x, y, i, carry, dim) {
+function dot(cx, C, x, y, i, carry, dim) {
   cx.globalAlpha = dim ? .25 : 1;
   cx.fillStyle = color(i); cx.beginPath(); cx.arc(x * C + C / 2, y * C + C / 2, C / 2 - 5, 0, 7); cx.fill();
   if (carry) { cx.fillStyle = '#4a90b8'; cx.beginPath(); cx.arc(x * C + C - 8, y * C + 8, 5, 0, 7); cx.fill(); }
@@ -97,6 +99,12 @@ function dot(x, y, i, carry, dim) {
   cx.globalAlpha = 1;
 }
 
+function draw() {
+  drawRoom(cx, world, C, true);
+  const box = document.getElementById('other');
+  if (shadow && shadow.day > 0 && !playing) { box.style.display = 'block'; drawRoom(cx2, shadow, C2, false); }
+  else box.style.display = 'none';
+}
 function names(k, w) { return k.split(',').map(i => w.people[i].name).join('和'); }
 function showLog() {
   document.getElementById('day').textContent = world.day ? `第 ${world.day} 天` : '还没开饭';
