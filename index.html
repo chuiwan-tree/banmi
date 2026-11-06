@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="zh"><head><meta charset="utf-8"><title>半米</title>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>半米</title>
 <style>
 body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f4efe6;color:#333;margin:0;padding:16px;display:flex;gap:18px;flex-wrap:wrap}
 #left{display:flex;flex-direction:column;gap:8px}
-canvas{background:#e9e2d4;border-radius:6px;cursor:default}
+canvas{background:#e9e2d4;border-radius:6px;cursor:default;max-width:100%;height:auto;touch-action:none}
+#left{max-width:100%}
 button{font-size:14px;padding:5px 12px;margin-right:6px;border:1px solid #a89b84;background:#fffaf0;border-radius:4px;cursor:pointer}
 button:disabled{opacity:.4}
 #right{width:400px;font-size:14px;line-height:1.6}
@@ -178,7 +179,7 @@ document.getElementById('back').onclick = () => {
   if (def.every((t, i) => t.x == world.tables[i].x && t.y == world.tables[i].y)) return;
   moved(); world.tables = def; draw();
 };
-const cell = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / C), Math.floor((e.clientY - r.top) / C)]; };
+const cell = e => { const r = cv.getBoundingClientRect(); const k = cv.width / r.width; return [Math.floor((e.clientX - r.left) * k / C), Math.floor((e.clientY - r.top) * k / C)]; };
 cv.onmousedown = e => {
   if (playing) return;
   const [x, y] = cell(e);
@@ -203,5 +204,10 @@ window.onmouseup = () => {
   drag = null; draw();
 };
 if (location.hash == '#t') { step(5, false); moved(); world.tables[12] = { x: 18, y: 10 }; step(10, false); picked = 0; showLog(); draw(); }
+// 手机上用手指拖
+const tp = e => { const t = e.touches[0] || e.changedTouches[0]; return { clientX: t.clientX, clientY: t.clientY }; };
+cv.addEventListener('touchstart', e => { e.preventDefault(); cv.onmousedown(tp(e)); }, { passive: false });
+cv.addEventListener('touchmove', e => { e.preventDefault(); cv.onmousemove(tp(e)); }, { passive: false });
+cv.addEventListener('touchend', e => { e.preventDefault(); window.onmouseup(); document.getElementById('tip').style.display = 'none'; }, { passive: false });
 showLog(); draw(); tick();
 </script></body></html>
