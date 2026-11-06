@@ -88,7 +88,7 @@ function drawRoom(cx, w, C, main) {
         cx.beginPath(); cx.moveTo(s[picked][0] * C + C / 2, s[picked][1] * C + C / 2); cx.lineTo(s[id][0] * C + C / 2, s[id][1] * C + C / 2); cx.stroke(); }
       cx.lineWidth = 1;
     }
-    for (const id in s) dot(cx, C, s[id][0], s[id][1], +id, 0, picked != null && picked != +id && !w.isFriend(+id, picked));
+    for (const id in s) dot(cx, C, s[id][0], s[id][1], +id, 0, picked != null && !autoPicked && picked != +id && !w.isFriend(+id, picked));
   }
 }
 function dot(cx, C, x, y, i, carry, dim) {
