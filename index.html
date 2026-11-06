@@ -115,8 +115,10 @@ function showLog() {
     const d = diff(world, shadow);
     D.style.display = 'block';
     let h = `<b>跟没推过的那个食堂比</b>（从第 ${shadowFrom + 1} 天分开）<br>今天坐的位置不一样的：${d.moved} 个人<br>`;
-    h += `<span class="a">只在这边熟了的：</span>${d.onlyA.length ? d.onlyA.map(k => names(k, world)).join('，') : '没有'}<br>`;
-    h += `<span class="b">只在那边熟了的：</span>${d.onlyB.length ? d.onlyB.map(k => names(k, world)).join('，') : '没有'}<br>`;
+    const few = (ks, w) => ks.length ? `${ks.length} 对：` + ks.slice(0, 4).map(k => names(k, w)).join('，') + (ks.length > 4 ? '……' : '') : '没有';
+    h += `<span class="a">只在这边熟了的</span> ${few(d.onlyA, world)}<br>`;
+    h += `<span class="b">只在那边熟了的</span> ${few(d.onlyB, world)}<br>`;
+    h += `<span class="small">点一个人，看他在两边各跟谁熟。</span><br>`;
     const ls = shadow.log[shadow.log.length - 1];
     h += `<details><summary class="small">那边今天</summary>${ls.events.map(e => `<div class="small">${e.s}</div>`).join('')}</details>`;
     h += `<button id="rebase" style="margin-top:6px">从这儿重新比</button>`;
