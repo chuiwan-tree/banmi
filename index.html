@@ -39,7 +39,7 @@ cv.width = W * C; cv.height = H * C;
 const C2 = 16, cv2 = document.getElementById('cv2'), cx2 = cv2.getContext('2d');
 cv2.width = W * C2; cv2.height = H * C2;
 let world = new World(11), shadow = null, frames = null, fi = 0, playing = false, speed = 1;
-let drag = null, picked = null, mouse = null;
+let drag = null, picked = null, mouse = null, autoPicked = false;
 const color = i => `hsl(${(i * 137) % 360},55%,${45 + (i % 3) * 8}%)`;
 
 function seatedNow(w) { // 最近一天谁坐在哪
@@ -132,7 +132,7 @@ function showWho() {
   const h = document.getElementById('whoh'), b = document.getElementById('who');
   if (picked == null) { h.style.display = 'none'; b.innerHTML = ''; return; }
   const p = world.people[picked];
-  h.style.display = 'block'; h.textContent = p.name + (p.shy ? '（怕生）' : '');
+  h.style.display = 'block'; h.textContent = p.name + (p.isNew ? `（第 ${p.isNew} 天转来的）` : '') + (p.shy ? '（怕生）' : '') + (p.left ? '（转走了）' : '');
   const fr = world.people.filter(o => o.id != picked && world.isFriend(o.id, picked)).map(o => `${o.name}（第 ${world.friends[world.key(o.id, picked)]} 天）`);
   let s = `熟的人：${fr.length ? fr.join('、') : '还没有'}<br>`;
   if (shadow && shadow.day > 0) {
@@ -149,6 +149,9 @@ function step(n, animate) {
     const last = k == n - 1 && animate;
     const fr = world.runDay(last);
     if (shadow) shadow.runDay(false);
+    // 新转来的人，没人点着谁的话，就跟着他看
+    const nw = world.people.find(p => p.isNew == world.day);
+    if (nw && (picked == null || autoPicked)) { picked = nw.id; autoPicked = true; }
     if (last) { frames = fr; fi = 0; playing = true; }
   }
   if (!playing) { showLog(); draw(); }
@@ -182,7 +185,7 @@ cv.onmousedown = e => {
   const i = world.tables.findIndex(t => t.y == y && (t.x == x || t.x + 1 == x));
   if (i >= 0) { drag = { i, x: world.tables[i].x, y: world.tables[i].y, ox: x - world.tables[i].x }; return; }
   const s = seatedNow(world); const id = Object.keys(s).find(k => s[k][0] == x && s[k][1] == y);
-  picked = id != null ? +id : null; showWho(); draw();
+  picked = id != null ? +id : null; autoPicked = false; showWho(); draw();
 };
 cv.onmousemove = e => {
   const [x, y] = cell(e);
